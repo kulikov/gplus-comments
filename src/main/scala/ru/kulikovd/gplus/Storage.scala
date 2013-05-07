@@ -19,12 +19,12 @@ trait StorageFactory {
 
 
 trait Storage {
-  def get(key: String): Array[Byte]
+  def get(key: String): Option[Array[Byte]]
   def put(key: String, data: Array[Byte])
 }
 
 
-object BytecaskStorage extends StorageFactory {
+class BytecaskStorageFactory(rootPath: String) extends StorageFactory {
   def create(name: String) = ???
 }
 

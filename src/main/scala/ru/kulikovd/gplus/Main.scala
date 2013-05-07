@@ -13,10 +13,10 @@ object Main extends App {
   val config = ConfigFactory.load().getConfig("gplus")
 
   val gPlusClient = new GplusApiClient(config.getString("api-key"))
-  val storage = new BytecaskStorage(config.getString("storage-dir"))
+  val storageFactory = new BytecaskStorageFactory(config.getString("storage-dir"))
 
   val profileRepo = system.actorOf(Props(
-    new ProfileRepository(gPlusClient, storage)
+    new ProfileRepository(gPlusClient, storageFactory)
   ))
 
   IO(Http) ! Http.Bind(
