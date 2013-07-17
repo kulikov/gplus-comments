@@ -1,0 +1,7 @@
+package ru.kulikovd.gplus.proto;
+
+
+message ActivityProto {
+  required string id = 1;
+  required string url = 2;
+}

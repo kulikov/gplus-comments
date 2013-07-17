@@ -1,43 +1,35 @@
 package ru.kulikovd.gplus
 
+import scala.util.Success
 
 import akka.actor._
-import akka.pattern.ask
-import akka.actor.Status.Success
-import scala.concurrent.Promise
-import spray.client.pipelining._
-import spray.http._
-import spray.http.HttpHeaders.RawHeader
-import spray.http.HttpHeaders.`Set-Cookie`
-import spray.json._
 
+import ru.kulikovd.gplus.proto.Activity.ActivityProto
 
-sealed trait ProfileRepoMessage
-case class ForwardTo(profileId: String, msg: Any) extends ProfileRepoMessage
 
 sealed trait ProfileMessage
-case class FindActivityBy(str: String) extends ProfileMessage
-case class GetActivityComments(activityId: String) extends ProfileMessage
-case class GetActivityCommentsBy(str: String) extends ProfileMessage
+case class ForwardTo(profileId: String, msg: Any) extends ProfileMessage
+case class GetActivityCommentsBy(substring: String) extends ProfileMessage
+case class ActivityFound(activity: Activity) extends ProfileMessage
+case class CommentsFound(activity: Activity, comments: List[Comment]) extends ProfileMessage
+
+sealed trait GplusError extends ProfileMessage
+case object ActivityNotFound extends GplusError
+case class UnexpectedServerError(message: String) extends GplusError
 
 
-case class Activity(
-  id: String,
-  url: String,
-  content: String = ""
-)
+class Activity(val id: String, val url: String, content: String = "") {
+  def contains(str: String) = content.contains(str)
+}
 
-case class Comment(
-  authorName: String,
-  authorImageUrl: String,
-  authorId: String,
-  text: String,
-  url: String,
-  date: String,
-  plusOneValue: Int
-)
-
-case class Comments(items: List[Comment])
+class Comment(
+    val authorName: String,
+    val authorImageUrl: String,
+    val authorId: String,
+    val text: String,
+    val url: String,
+    val date: String,
+    val plusOneValue: Int)
 
 
 class ProfileRepository(gplusClient: GplusApiClient, storageFactory: StorageFactory) extends Actor with ActorLogging {
@@ -46,72 +38,80 @@ class ProfileRepository(gplusClient: GplusApiClient, storageFactory: StorageFact
 
   def receive = {
     case ForwardTo(profileId, msg) ⇒
-      profiles getOrElseUpdate(profileId, createProfile(profileId)) forward msg
+      profiles.getOrElseUpdate(profileId, createProfile(profileId)) forward msg
   }
 
   private def createProfile(profileId: String) =
     context.actorOf(Props(
       new Profile(profileId, gplusClient, storageFactory.create(profileId))
-    ), name = "profile/" + profileId)
+    ), name = "profile-" + profileId)
 }
 
 
-class Profile(profileId: String, gplusClient: GplusApiClient, storage: Storage) extends Actor with ActorLogging {
+class Profile(profileId: String, gplusClient: GplusApiClient, storage: Storage)
+  extends Actor
+    with Stash
+    with ActorLogging {
+
+  import context.dispatcher
+
+  var originSender: Option[ActorRef] = None
 
   def receive = {
-    case FindActivityBy(str) ⇒
-      storage.get(str) map (bytes ⇒ Promise.successful(Some(deserialize(bytes)))) getOrElse {
-        gplusClient.activities(profileId) map { case json: String =>
-          JsonParser(json).asJsObject.fields.get("items") match {
-            case Some(JsArray(items)) ⇒
-              items find(_.toString().contains(str)) map { case JsObject(act) ⇒
-                val activity = Activity(
-                  id = act("id").asInstanceOf[JsString].value,
-                  url = act("url").asInstanceOf[JsString].value
-                )
+    case GetActivityCommentsBy(str) ⇒
+      originSender = Some(sender)
+      context.become(loadComments)
 
-                storage.put(str, serialize(activity))
+      storage.get(str) match {
+        case Some(bytes) =>
+          self ! ActivityFound(deserialize(bytes))
 
-                activity
+        case None =>
+          gplusClient.activities(profileId) onComplete {
+            case Success(activities) =>
+              activities find (_.contains(str)) match {
+                case Some(activity) =>
+                  storage.put(str, serialize(activity))
+                  self ! ActivityFound(activity)
+
+                case _ => self ! ActivityNotFound
               }
 
-            case other ⇒
-              log.error("Malformed json format {}", json)
-              None
+            case error =>
+              self ! UnexpectedServerError(s"Failed load activities fror profile '$profileId'. Reason: $error")
           }
-        }
+      }
+  }
+
+  def loadComments: Receive = {
+    case ActivityFound(activity) =>
+      gplusClient.comments(activity.id) onComplete {
+        case Success(comments) =>
+          self ! CommentsFound(activity, comments)
+
+        case error =>
+          self ! UnexpectedServerError(s"Not exists comments for activity ${activity.id}. Reason: $error")
       }
 
-    case GetActivityComments(activityId) ⇒
-      ???
+    case result @ (_: CommentsFound | _: GplusError) =>
+      originSender.get ! result
 
-    case GetActivityCommentsBy(str) ⇒
-      val originalSender = sender
+      originSender = None
+      unstashAll()
+      context.unbecome()
 
-      self ? FindActivityBy(str) onComplete {
-        case Success(activ: Activity) ⇒
-          self ? GetActivityComments(activ.id) onComplete {
-            case Success(cs: Comments) ⇒
-              originalSender ! (activ, cs)
-
-            case other ⇒
-              originalSender ! other
-          }
-
-        case other ⇒
-          originalSender ! other
-      }
+    case other => stash()
   }
 
   private def deserialize(bytes: Array[Byte]) = {
     val proto = ActivityProto.parseFrom(bytes)
-    Activity(proto.getId, proto.getUrl)
+    new Activity(proto.getId, proto.getUrl)
   }
 
   private def serialize(activ: Activity) =
     ActivityProto.newBuilder
       .setId(activ.id)
       .setUrl(activ.url)
-      .build
+      .build()
       .toByteArray
 }

@@ -1,16 +1,6 @@
 package ru.kulikovd.gplus
 
-import scala.concurrent.{Promise, Future}
-import scala.concurrent.duration._
-import scala.util.Success
-
-import akka.actor._
-import akka.util.Timeout
-import spray.client.pipelining._
-import spray.http._
-import spray.http.HttpHeaders.RawHeader
-import spray.http.HttpHeaders.`Set-Cookie`
-import spray.json._
+import com.github.bytecask.Bytecask
 
 
 trait StorageFactory {
@@ -25,12 +15,16 @@ trait Storage {
 
 
 class BytecaskStorageFactory(rootPath: String) extends StorageFactory {
-  def create(name: String) = ???
+  def create(name: String) = new BytecaskStorage(rootPath, name)
 }
 
 
-class BytecaskStorage extends Storage {
-  def get(key: String) = ???
+class BytecaskStorage(rootPath: String, name: String) extends Storage {
+  private val db = new Bytecask(rootPath + "/" + name)
 
-  def put(key: String, data: Array[Byte]) {}
+  def get(key: String) = db.get(key.getBytes).map(_.bytes)
+
+  def put(key: String, data: Array[Byte]) {
+    db.put(key.getBytes, data)
+  }
 }

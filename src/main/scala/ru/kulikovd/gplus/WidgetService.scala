@@ -7,10 +7,11 @@ import akka.pattern.ask
 import akka.util.Timeout
 import spray.http._
 import spray.routing.HttpService
-import akka.actor.Status.Success
+import scala.util.Success
 
 
 class WidgetService(profileRepo: ActorRef) extends Actor with HttpService {
+  import context.dispatcher
 
   implicit val timeout = Timeout(20 seconds)
 
@@ -18,15 +19,12 @@ class WidgetService(profileRepo: ActorRef) extends Actor with HttpService {
 
   def receive = runRoute {
     get {
-      (path("pingback") & parameters('profile, 'url)) { (profileId, url) ⇒
+      (path("pingback") & parameters('profile.as[Long], 'url)) { (profile, url) ⇒
         respondWithMediaType(MediaTypes.`application/javascript`) {
           complete {
-            profileRepo ? ForwardTo(profileId, GetActivityCommentsBy(url)) onComplete {
-              case Success((activ: Activity, Comments(items))) ⇒
-                activ + " " + items
-
-              case other ⇒
-                other
+            profileRepo ? ForwardTo(profile.toString, GetActivityCommentsBy(url)) map {
+              case CommentsFound(activ, comments) ⇒ activ + " " + comments
+              case other ⇒ other.toString
             }
           }
         }
