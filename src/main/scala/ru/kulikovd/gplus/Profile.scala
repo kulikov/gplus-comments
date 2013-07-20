@@ -30,7 +30,10 @@ class Comment(
     val authorId: String,
     val text: String,
     val date: String,
-    val plusOneValue: Int)
+    val plusOneValue: Int) {
+
+  def authorProfileUrl = "///"
+}
 
 
 class ProfileRepository(gplusClient: GplusApiClient, storageFactory: StorageFactory) extends Actor with ActorLogging {

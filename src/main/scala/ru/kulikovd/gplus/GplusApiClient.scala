@@ -42,7 +42,7 @@ class GplusApiClient(apiKey: String, system: ActorSystem) {
                 url = item("url"),
                 content = item("object") match {
                   case JsObject(obj) ⇒ obj("content") + (obj.get("attachments") collect { case JsArray(atts) =>
-                    atts collect { case JsObject(at) => at.values.map(js2string).mkString }
+                    atts collect { case JsObject(at) => at.mapValues(js2string).mkString }
                   })
                   case _ => throw new Exception
                 })
