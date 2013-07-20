@@ -20,6 +20,8 @@ case class UnexpectedServerError(message: String) extends GplusError
 
 class Activity(val id: String, val url: String, content: String = "") {
   def contains(str: String) = content.contains(str)
+
+  override def toString = s"$id|$url|$content"
 }
 
 class Comment(
@@ -27,7 +29,6 @@ class Comment(
     val authorImageUrl: String,
     val authorId: String,
     val text: String,
-    val url: String,
     val date: String,
     val plusOneValue: Int)
 
@@ -55,6 +56,8 @@ class Profile(profileId: String, gplusClient: GplusApiClient, storage: Storage)
 
   import context.dispatcher
 
+  log.info("Create profile {}", profileId)
+
   var originSender: Option[ActorRef] = None
 
   def receive = {
@@ -63,12 +66,12 @@ class Profile(profileId: String, gplusClient: GplusApiClient, storage: Storage)
       context.become(loadComments)
 
       storage.get(str) match {
-        case Some(bytes) =>
+        case Some(bytes) ⇒
           self ! ActivityFound(deserialize(bytes))
 
-        case None =>
+        case None ⇒
           gplusClient.activities(profileId) onComplete {
-            case Success(activities) =>
+            case Success(activities) ⇒
               activities find (_.contains(str)) match {
                 case Some(activity) =>
                   storage.put(str, serialize(activity))
@@ -77,7 +80,7 @@ class Profile(profileId: String, gplusClient: GplusApiClient, storage: Storage)
                 case _ => self ! ActivityNotFound
               }
 
-            case error =>
+            case error ⇒
               self ! UnexpectedServerError(s"Failed load activities fror profile '$profileId'. Reason: $error")
           }
       }

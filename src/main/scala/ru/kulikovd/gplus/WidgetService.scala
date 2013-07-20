@@ -19,10 +19,10 @@ class WidgetService(profileRepo: ActorRef) extends Actor with HttpService {
 
   def receive = runRoute {
     get {
-      (path("pingback") & parameters('profile.as[Long], 'url)) { (profile, url) ⇒
+      (path("pingback") & parameters('profile, 'url)) { (profile, url) ⇒
         respondWithMediaType(MediaTypes.`application/javascript`) {
           complete {
-            profileRepo ? ForwardTo(profile.toString, GetActivityCommentsBy(url)) map {
+            profileRepo ? ForwardTo(profile, GetActivityCommentsBy(url)) map {
               case CommentsFound(activ, comments) ⇒ activ + " " + comments
               case other ⇒ other.toString
             }

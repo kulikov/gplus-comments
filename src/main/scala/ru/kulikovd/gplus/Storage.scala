@@ -20,7 +20,7 @@ class BytecaskStorageFactory(rootPath: String) extends StorageFactory {
 
 
 class BytecaskStorage(rootPath: String, name: String) extends Storage {
-  private val db = new Bytecask(rootPath + "/" + name)
+  private val db = new Bytecask(rootPath + "/" + name.replaceAll("[^\\w]", ""))
 
   def get(key: String) = db.get(key.getBytes).map(_.bytes)
 
